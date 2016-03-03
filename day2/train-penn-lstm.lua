@@ -65,17 +65,17 @@ function reverse(x)
    end
    local y_inp = y:clone()
    y_inp:sub(1,-1,2,-1):copy(y:sub(1,-1,1,-2))
-   y_inp:sub(1,-1,1,1):fill(1) -- stupid number
+   y_inp:sub(1,-1,1,1):fill(42) -- Go symbol
    return y_inp, y
 end
 
 -- Define LSTM layers:
-local lstm1,params = model.RecurrentLSTMNetwork({
+local encoder,params = model.RecurrentLSTMNetwork({
    inputFeatures = opt.wordDim,
    hiddenFeatures = opt.hiddens,
-   outputType = 'all',
+   outputType = 'last',
 })
-local lstm2 = model.RecurrentLSTMNetwork({
+local decoder = model.RecurrentLSTMNetwork({
    inputFeatures = opt.hiddens,
    hiddenFeatures = opt.hiddens,
    outputType = 'all',
@@ -93,18 +93,23 @@ local lsm = d.nn.LogSoftMax()
 local lossf = d.nn.ClassNLLCriterion()
 
 -- Complete trainable function:
-local f = function(params, x, y, prevState, dropout)
+local f = function(params, x, prevState, dropout)
    -- N elements:
    local batchSize = torch.size(x, 1)
    local bpropLength = torch.size(x, 2)
    local nElements = batchSize * bpropLength
 
-   -- Select word vectors
+   local y_inp, y_next = reverse(x)
+
+   -- Select word vectors for encoder
    x = util.lookup(params.words.W, x)
+   -- input for the decoder
+   y_inp = util.lookup(params.words.W, y)
 
    -- Encode all inputs through LSTM layers:
-   local h1,newState1 = lstm1(params[1], regularize(x,dropout), prevState[1])
-   local h2,newState2 = lstm2(params[2], regularize(h1,dropout), prevState[2])
+   local _,encState = encoder(params[1], regularize(x,dropout))
+
+   local hdec,_ = decoder(params[2], regularize(y_inp,dropout), encState)
 
    -- Flatten batch + temporal
    local h2f = torch.view(h2, nElements, opt.hiddens)

@@ -9,7 +9,7 @@ Options:
    --wordDim        (default 200)     word vector dimensionality
    --hiddens        (default 200)     nb of hidden units
    --capEpoch       (default -1)      cap epoch to given number of steps (for debugging)
-   --reportEvery    (default 200)     report training accuracy every N steps
+   --reportEvery    (default 20)     report training accuracy every N steps
    --learningRate   (default 20)      learning rate
    --maxGradNorm    (default .25)     cap gradient norm
    --paramRange     (default .1)      initial parameter range
@@ -93,27 +93,27 @@ local lsm = d.nn.LogSoftMax()
 local lossf = d.nn.ClassNLLCriterion()
 
 -- Complete trainable function:
-local f = function(params, x, prevState, dropout)
+local f = function(params, x, y_inp, y_next, prevState, dropout)
    -- N elements:
    local batchSize = torch.size(x, 1)
    local bpropLength = torch.size(x, 2)
    local nElements = batchSize * bpropLength
 
-   local y_inp, y_next = reverse(x)
+   --local y_inp, y_next = reverse(x)
 
    -- Select word vectors for encoder
    x = util.lookup(params.words.W, x)
    -- input for the decoder
-   y_inp = util.lookup(params.words.W, y)
+   y_inp = util.lookup(params.words.W, y_inp)
 
    -- Encode all inputs through LSTM layers:
    local _,encState = encoder(params[1], regularize(x,dropout))
 
    local hdec,_ = decoder(params[2], regularize(y_inp,dropout), encState)
-
+   -- hdec is a 3D tensor of (batch size, seq-length, hidden_size)
    -- Flatten batch + temporal
-   local h2f = torch.view(h2, nElements, opt.hiddens)
-   local yf = torch.view(y, nElements)
+   local h2f = torch.view(hdec, nElements, opt.hiddens)
+   local yf = torch.view(y_next, nElements)
 
    -- Linear classifier:
    local h3 = regularize(h2f,dropout) * params[3].W + torch.expand(params[3].b, nElements, nClasses)
@@ -195,14 +195,10 @@ for epoch = 1,opt.nEpochs do
 
       -- Next sequence:
       local x = trainData:narrow(2,i,opt.bpropLength):contiguous()
-      --print(x)
       local y = trainData:narrow(2,i+1,opt.bpropLength):contiguous()
       local y_inp, y_next = reverse(x)
-      print(x)
-      print(y_next)
-      print('------')
-      -- Grads:
-      grads,loss,lstmState = df(params, x, y, lstmState, opt.dropout)
+
+      grads,loss,lstmState = df(params, x, y_inp, y_next, lstmState, opt.dropout)
 
       -- Cap gradient norms:
       local norm = 0
